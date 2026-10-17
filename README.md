@@ -2,9 +2,11 @@
 
 Lädt alle Nachrichten aus allen Ordnern eines oder mehrerer IMAP-Postfächer (z. B. Strato) herunter und speichert sie lokal als `.eml`-Dateien. Anhänge bleiben unverändert in der Datei. Bereits geladene Nachrichten merkt sich das Programm lokal und lädt sie nicht erneut.
 
+Zu jeder Mail legt das Programm zusätzlich eine PDF-Datei mit gleichem Namen an. Außerdem schreibt es pro Postfach eine `index.html` mit allen Mails. Diese Datei wird bei jedem Abruf aktualisiert.
+
 - Auf dem Server wird nur gelesen (`EXAMINE` und `BODY.PEEK`). Der Status „gelesen“ ändert sich dadurch nicht.
 - Duplikate erkennt das Programm über die IMAP-UID (pro Ordner und `UIDVALIDITY`) und zusätzlich über den `Message-ID`-Header pro Konto. Liegt dieselbe Mail in mehreren Ordnern, wird sie nur einmal gespeichert.
-- Es werden nur Module der Python-Standardbibliothek verwendet (Python ≥ 3.11).
+- Benötigt Python ≥ 3.11. Einzige externe Abhängigkeit ist [WeasyPrint](https://weasyprint.org/) für die PDFs. Es braucht die Systembibliothek Pango, die unter Fedora normalerweise schon installiert ist (`dnf install pango`).
 
 ## Installation
 
@@ -44,6 +46,8 @@ mailabruf fetch --dry-run    # zählen, was neu wäre
 mailabruf fetch              # alle aktiven Konten abrufen
 mailabruf fetch firma        # nur ein Konto
 mailabruf status             # was lokal schon gespeichert ist
+mailabruf render             # offline: fehlende/fehlgeschlagene PDFs erzeugen, index.html neu schreiben
+mailabruf render --force     # alle PDFs neu erzeugen
 mailabruf -v fetch           # jede gespeicherte Datei ausgeben
 mailabruf -q fetch           # nur Fehler ausgeben (für cron)
 ```
@@ -61,12 +65,20 @@ Exit-Codes:
 ### Ablage
 
 ```
+<target_dir>/index.html
 <target_dir>/<Ordner>/<Unterordner>/<JJJJ-MM-TT_HHMMSS>_<UID>.eml
+<target_dir>/<Ordner>/<Unterordner>/<JJJJ-MM-TT_HHMMSS>_<UID>.pdf
 ```
 
-Das Datum ist das Empfangsdatum auf dem Server (`INTERNALDATE`) in lokaler Zeit. Die Dateien erhalten die Rechte `0600`.
+Das Datum ist das Empfangsdatum auf dem Server (`INTERNALDATE`) in lokaler Zeit. Alle Dateien erhalten die Rechte `0600`.
 
-Der Download-Zustand liegt in `~/.local/state/mailabruf/<konto>.sqlite3`. Löscht man diese Datei, prüft das Programm beim nächsten Lauf alles neu und lädt alle Nachrichten noch einmal herunter.
+**PDF:** Oben auf der ersten Seite stehen Absender, Empfänger, Cc, Datum, Betreff und die Namen der Anhänge, darunter folgt der Text der Mail. Bei HTML-Mails wird die HTML-Fassung genommen, sonst der reine Text. Bilder kommen nur in die PDF, wenn sie in der Mail selbst stecken. Externe Bilder und Links auf lokale Dateien werden blockiert. Das hat drei Gründe: Absender erfahren nichts vom Öffnen, es funktioniert offline, und keine Mail kann lokale Dateien in die PDF einschleusen. Die Anhänge selbst stecken nur in der `.eml`-Datei.
+
+Scheitert eine PDF, gibt das Programm eine Warnung aus und versucht es beim normalen Abruf nicht erneut. Einen neuen Versuch startet `mailabruf render`.
+
+**index.html:** Die Datei ist in sich geschlossen, braucht also keine externen Abhängigkeiten und funktioniert offline. Sie listet alle Mails mit Datum, Ordner, Betreff, Absender und Empfängern (An und Cc) und verlinkt jeweils die EML- und die PDF-Datei. Ein Klick auf eine Spaltenüberschrift sortiert die Tabelle, das Suchfeld durchsucht alle Spalten, und ein Auswahlfeld zeigt nur einen Ordner. Öffnen mit z. B. `xdg-open ~/Mail-Archiv/<konto>/index.html`.
+
+Der Download-Zustand liegt in `~/.local/state/mailabruf/<konto>.sqlite3`. Dazu gehören auch die Metadaten für den Index und der PDF-Status. Löscht man diese Datei, prüft das Programm beim nächsten Lauf alles neu und lädt alle Nachrichten noch einmal herunter. Datenbanken älterer Versionen werden beim ersten Start automatisch erweitert. Für schon vorhandene Mails werden die PDFs dann nachträglich erzeugt.
 
 ## Automatisierung
 

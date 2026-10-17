@@ -1,10 +1,12 @@
 [project]
 name = "mailabruf"
-version = "0.1.0"
-description = "Download all messages of IMAP mailboxes into local .eml files"
+version = "0.2.0"
+description = "Download all messages of IMAP mailboxes into local .eml files, with PDF copies and an HTML index"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "weasyprint>=70.0",
+]
 
 [project.scripts]
 mailabruf = "mailabruf.cli:main"

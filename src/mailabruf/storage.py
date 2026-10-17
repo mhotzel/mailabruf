@@ -40,6 +40,14 @@ def message_filename(received: datetime | None, uid: int) -> str:
     return f"{received.astimezone():%Y-%m-%d_%H%M%S}_{uid}.eml"
 
 
+def received_from_filename(name: str) -> datetime | None:
+    """Inverse of message_filename (local time); None for unknown-date files."""
+    try:
+        return datetime.strptime(name[:17], "%Y-%m-%d_%H%M%S").astimezone()
+    except ValueError:
+        return None
+
+
 def unique_path(path: Path) -> Path:
     """Return ``path`` or, if it exists, ``<stem>-1<suffix>``, ``<stem>-2<suffix>``, ..."""
     candidate = path

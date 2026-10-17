@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mailabruf import __version__, storage
 from mailabruf.config import Config, ConfigError, default_config_dir, load_config
-from mailabruf.fetcher import fetch_account, format_counts
+from mailabruf.fetcher import AccountResult, fetch_account, format_counts, rebuild_account
 from mailabruf.imap_client import Connection, ImapError
 from mailabruf.output import Output
 from mailabruf.state import State
@@ -47,6 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
     folders = commands.add_parser("folders", help="list the folders on the server")
     folders.add_argument("account", metavar="ACCOUNT")
     folders.set_defaults(func=cmd_folders)
+
+    render = commands.add_parser(
+        "render", help="offline: create missing or failed PDFs and rewrite index.html"
+    )
+    render.add_argument("accounts", nargs="*", metavar="ACCOUNT", help="default: all enabled accounts")
+    render.add_argument("--force", action="store_true", help="re-create all PDFs")
+    render.set_defaults(func=cmd_render)
 
     status = commands.add_parser("status", help="show what has been downloaded so far")
     status.add_argument("accounts", nargs="*", metavar="ACCOUNT", help="default: all enabled accounts")
@@ -97,7 +104,39 @@ def cmd_fetch(config: Config, args: argparse.Namespace, out: Output) -> int:
             f"{format_counts(result.new, result.duplicate, result.errors)} "
             f"in {len(result.folders)} folders ({result.seconds:.1f}s){suffix}"
         )
+        _report_archive(result, out)
     return EXIT_PARTIAL if failed else EXIT_OK
+
+
+def cmd_render(config: Config, args: argparse.Namespace, out: Output) -> int:
+    failed = False
+    for account in config.select(args.accounts):
+        if not (config.state_dir / f"{account.name}.sqlite3").exists():
+            out.info(f"[{account.name}] nothing downloaded yet")
+            continue
+        result = rebuild_account(account, config.state_dir, out, force=args.force)
+        if result.locked:
+            out.warning(f"[{account.name}] skipped: another mailabruf run is active for this account")
+            continue
+        if result.error:
+            out.error(f"[{account.name}] {result.error}")
+        failed = failed or result.failed
+        _report_archive(result, out, always=True)
+    return EXIT_PARTIAL if failed else EXIT_OK
+
+
+def _report_archive(result: AccountResult, out: Output, always: bool = False) -> None:
+    archive = result.archive
+    if archive is None:
+        return
+    line = (
+        f"[{result.name}] PDF: {archive.pdf_created} created, {archive.pdf_failed} failed; "
+        f"index: {archive.index}"
+    )
+    if always or archive.pdf_created or archive.pdf_failed:
+        out.info(line)
+    else:
+        out.detail(line)
 
 
 def cmd_folders(config: Config, args: argparse.Namespace, out: Output) -> int:

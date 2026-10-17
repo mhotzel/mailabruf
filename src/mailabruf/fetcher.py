@@ -5,11 +5,13 @@ from __future__ import annotations
 import fcntl
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mailabruf import storage
+from mailabruf import mailinfo, storage
+from mailabruf.archive import ArchiveResult, update_archive
 from mailabruf.config import Account
 from mailabruf.imap_client import Connection, ConnectionLost, Folder, ImapError
 from mailabruf.output import Output
@@ -31,6 +33,7 @@ class AccountResult:
     error: str | None = None
     locked: bool = False
     seconds: float = 0.0
+    archive: ArchiveResult | None = None
 
     @property
     def new(self) -> int:
@@ -46,11 +49,25 @@ class AccountResult:
 
     @property
     def failed(self) -> bool:
-        return self.error is not None or self.errors > 0
+        pdf_failed = self.archive.pdf_failed if self.archive else 0
+        return self.error is not None or self.errors > 0 or pdf_failed > 0
 
 
 def format_counts(new: int, duplicate: int, errors: int) -> str:
     return f"{new} new, {duplicate} duplicate, {errors} errors"
+
+
+@contextmanager
+def account_lock(state_dir: Path, account: Account) -> Iterator[bool]:
+    """Exclusive per-account lock; yields False if another run holds it."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    with open(state_dir / f"{account.name}.lock", "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        yield True
 
 
 def fetch_account(
@@ -61,28 +78,51 @@ def fetch_account(
     dry_run: bool = False,
     connection_factory: Callable[[Account], Connection] = Connection,
 ) -> AccountResult:
+    """Download new messages, then create missing PDFs and rewrite index.html."""
     result = AccountResult(account.name)
     started = time.monotonic()
-    state_dir.mkdir(parents=True, exist_ok=True)
-    with open(state_dir / f"{account.name}.lock", "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+    with account_lock(state_dir, account) as acquired:
+        if not acquired:
             result.locked = True
             return result
         try:
-            with (
-                State(state_dir / f"{account.name}.sqlite3") as state,
-                connection_factory(account) as conn,
-            ):
-                seen_ids: set[str] = set()
-                for folder in conn.list_folders():
-                    if not folder.selectable or _excluded(account, folder):
-                        continue
-                    folder_result = _fetch_folder(conn, state, account, folder, out, dry_run, seen_ids)
-                    result.folders.append(folder_result)
-        except ImapError as exc:
-            result.error = str(exc)
+            with State(state_dir / f"{account.name}.sqlite3") as state:
+                try:
+                    with connection_factory(account) as conn:
+                        seen_ids: set[str] = set()
+                        for folder in conn.list_folders():
+                            if not folder.selectable or _excluded(account, folder):
+                                continue
+                            result.folders.append(
+                                _fetch_folder(conn, state, account, folder, out, dry_run, seen_ids)
+                            )
+                except ImapError as exc:
+                    result.error = str(exc)
+                # Runs without a connection, also after IMAP errors.
+                if not dry_run:
+                    result.archive = update_archive(account, state, out)
+        except (OSError, sqlite3.Error) as exc:
+            result.error = f"local error: {exc}"
+        finally:
+            result.seconds = time.monotonic() - started
+    return result
+
+
+def rebuild_account(
+    account: Account, state_dir: Path, out: Output, *, force: bool = False
+) -> AccountResult:
+    """Offline: retry failed PDFs (or re-render all with ``force``) and rewrite index.html."""
+    result = AccountResult(account.name)
+    started = time.monotonic()
+    with account_lock(state_dir, account) as acquired:
+        if not acquired:
+            result.locked = True
+            return result
+        try:
+            with State(state_dir / f"{account.name}.sqlite3") as state:
+                result.archive = update_archive(
+                    account, state, out, retry_failed=True, force=force
+                )
         except (OSError, sqlite3.Error) as exc:
             result.error = f"local error: {exc}"
         finally:
@@ -163,7 +203,10 @@ def _fetch_folder(
 
         path = storage.unique_path(target_dir / storage.message_filename(info.received, uid))
         storage.write_atomic(path, data)
-        state.record(folder.name, uidvalidity, uid, message_id, str(path), "saved")
+        state.record(
+            folder.name, uidvalidity, uid, message_id, str(path), "saved",
+            received=info.received, summary=mailinfo.summarize(data),
+        )
         result.new += 1
         out.detail(f"{prefix}: saved {path}")
 
