@@ -2,11 +2,35 @@
 
 Lädt alle Nachrichten aus allen Ordnern eines oder mehrerer IMAP-Postfächer (z. B. Strato) herunter und speichert sie lokal als `.eml`-Dateien. Anhänge bleiben unverändert in der Datei. Bereits geladene Nachrichten merkt sich das Programm lokal und lädt sie nicht erneut.
 
-Zu jeder Mail legt das Programm zusätzlich eine PDF-Datei mit gleichem Namen an. Außerdem schreibt es pro Postfach eine `index.html` mit allen Mails. Diese Datei wird bei jedem Abruf aktualisiert.
+Zu jeder Mail legt das Programm zusätzlich eine PDF-Datei mit gleichem Namen an (siehe [PDF-Erzeugung](#pdf-erzeugung)). Außerdem schreibt es pro Postfach eine `index.html` mit allen Mails (siehe [Index](#index-indexhtml)). Diese Datei wird bei jedem Abruf aktualisiert.
 
 - Auf dem Server wird nur gelesen (`EXAMINE` und `BODY.PEEK`). Der Status „gelesen“ ändert sich dadurch nicht.
 - Duplikate erkennt das Programm über die IMAP-UID (pro Ordner und `UIDVALIDITY`) und zusätzlich über den `Message-ID`-Header pro Konto. Liegt dieselbe Mail in mehreren Ordnern, wird sie nur einmal gespeichert.
-- Benötigt Python ≥ 3.11. Einzige externe Abhängigkeit ist [WeasyPrint](https://weasyprint.org/) für die PDFs. Es braucht die Systembibliothek Pango, die unter Fedora normalerweise schon installiert ist (`dnf install pango`).
+- Es gibt externe Abhängigkeiten, siehe [Voraussetzungen und Abhängigkeiten](#voraussetzungen-und-abhängigkeiten).
+
+## Voraussetzungen und Abhängigkeiten
+
+Abruf und Ablage der Mails (IMAP, `.eml`, SQLite, Konfiguration) kommen allein mit der Python-Standardbibliothek aus. Für die **PDF-Erzeugung** kommen externe Abhängigkeiten dazu. Ohne sie startet das Programm nicht, auch nicht für den reinen Abruf.
+
+| Art | Abhängigkeit | Wofür |
+|---|---|---|
+| Laufzeit | Python ≥ 3.11 | das Programm selbst (`tomllib`) |
+| Python-Paket | [WeasyPrint](https://weasyprint.org/) ≥ 70 | HTML → PDF |
+| Python-Pakete (von WeasyPrint) | `pydyf`, `tinycss2`, `cssselect2`, `tinyhtml5`, `fonttools`, `pillow`, `pyphen`, `cffi` | PDF-Ausgabe, CSS, HTML-Parser, Schriften, Bilder |
+| Systembibliotheken | Pango (≥ 1.44) mit HarfBuzz, Fontconfig | Textsatz und Schriften; WeasyPrint lädt sie über `cffi` |
+| Schriften | beliebige installierte Systemschriften | Darstellung in den PDFs |
+| nur Entwicklung | `pytest`, `pypdf` | Tests; `pypdf` liest den Text der erzeugten PDFs aus |
+
+Die Python-Pakete installiert `uv` automatisch: `uv run` nimmt die festen Versionen aus `uv.lock`, `uv tool install .` die jeweils passenden aktuellen. Die Systembibliotheken sind auf einem Fedora-Desktop normalerweise schon vorhanden. Fehlen sie, zum Beispiel auf einem Server ohne grafische Oberfläche, installierst du sie so:
+
+```sh
+sudo dnf install pango                      # Fedora
+sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core   # Debian/Ubuntu
+```
+
+Die index.html hat **keine** externen Abhängigkeiten. Sie ist eine einzelne Datei mit eingebettetem CSS und JavaScript und funktioniert ohne Internet in jedem aktuellen Browser.
+
+Netzzugriff hat das Programm nur auf den IMAP-Server. Beim Erzeugen der PDFs lädt es nichts aus dem Internet.
 
 ## Installation
 
@@ -72,11 +96,73 @@ Exit-Codes:
 
 Das Datum ist das Empfangsdatum auf dem Server (`INTERNALDATE`) in lokaler Zeit. Alle Dateien erhalten die Rechte `0600`.
 
-**PDF:** Oben auf der ersten Seite stehen Absender, Empfänger, Cc, Datum, Betreff und die Namen der Anhänge, darunter folgt der Text der Mail. Bei HTML-Mails wird die HTML-Fassung genommen, sonst der reine Text. Bilder kommen nur in die PDF, wenn sie in der Mail selbst stecken. Externe Bilder und Links auf lokale Dateien werden blockiert. Das hat drei Gründe: Absender erfahren nichts vom Öffnen, es funktioniert offline, und keine Mail kann lokale Dateien in die PDF einschleusen. Die Anhänge selbst stecken nur in der `.eml`-Datei.
+### PDF-Erzeugung
 
-Scheitert eine PDF, gibt das Programm eine Warnung aus und versucht es beim normalen Abruf nicht erneut. Einen neuen Versuch startet `mailabruf render`.
+Zu jeder gespeicherten `.eml`-Datei legt das Programm eine PDF mit gleichem Namen in denselben Ordner, z. B. `INBOX/2026-07-30_142413_1900.eml` → `INBOX/2026-07-30_142413_1900.pdf`. Erzeugt werden die PDFs mit [WeasyPrint](https://weasyprint.org/) (siehe [Abhängigkeiten](#voraussetzungen-und-abhängigkeiten)).
 
-**index.html:** Die Datei ist in sich geschlossen, braucht also keine externen Abhängigkeiten und funktioniert offline. Sie listet alle Mails mit Datum, Ordner, Betreff, Absender und Empfängern (An und Cc) und verlinkt jeweils die EML- und die PDF-Datei. Ein Klick auf eine Spaltenüberschrift sortiert die Tabelle, das Suchfeld durchsucht alle Spalten, und ein Auswahlfeld zeigt nur einen Ordner. Öffnen mit z. B. `xdg-open ~/Mail-Archiv/<konto>/index.html`.
+**Wann:** Nach dem Abruf eines Kontos, sobald die Verbindung zum Server beendet ist. Dabei entstehen die PDFs für alle Mails, die noch keine haben. Das gilt für die gerade geladenen Mails ebenso wie für ältere, deren PDF fehlt, etwa nach dem Umstieg von einer älteren Version oder wenn eine PDF gelöscht wurde. `mailabruf fetch --dry-run` erzeugt keine PDFs.
+
+**Inhalt:**
+
+- Oben auf der ersten Seite steht ein grauer Kopfblock mit Absender (From), Empfänger (To), Cc, Datum, Betreff und den Namen und Größen der Anhänge.
+- Darunter folgt der Text der Mail. Bei HTML-Mails wird die HTML-Fassung mit ihrem Layout genommen, sonst der reine Text in Festbreitenschrift.
+- Format A4 mit Seitenzahl „Seite / Gesamt“ unten rechts.
+
+**Externe Inhalte werden blockiert:** In die PDF kommen nur Bilder, die in der Mail selbst stecken (`cid:`-Teile und `data:`-URIs). Bilder aus dem Internet und Verweise auf lokale Dateien (`file://`) lädt das Programm nicht. Das hat drei Gründe: Absender erfahren nichts vom Öffnen (Tracking-Pixel), die Erzeugung funktioniert offline, und keine Mail kann lokale Dateien in die PDF einschleusen. Externe Logos fehlen deshalb in der PDF, stattdessen erscheint gegebenenfalls ihr Ersatztext.
+
+**Grenzen:**
+
+- Die Anhänge stehen in der PDF nur als Name. Ihr Inhalt steckt allein in der `.eml`-Datei.
+- Sehr breite HTML-Mails können am rechten Rand abgeschnitten sein. Bilder werden auf Seitenbreite verkleinert.
+- Die PDF ist eine Lesekopie. Das unveränderte Original vom Server bleibt die `.eml`-Datei.
+
+**Dauer:** etwa 4 PDFs pro Sekunde. Ein erster Lauf über ein bestehendes Archiv mit rund 1.350 Mails dauerte etwa 6,5 Minuten und brauchte bis zu 550 MB Arbeitsspeicher. Danach kommen nur noch die neuen Mails dazu. Bei mehr als 50 ausstehenden PDFs zeigt das Programm alle 50 Stück den Fortschritt an.
+
+**Fehler:** Scheitert eine PDF, gibt das Programm eine Warnung mit dem Grund aus, und der Lauf endet mit Exit-Code 1. Beim normalen Abruf versucht es dieselbe Mail nicht noch einmal, damit nicht jeder Lauf dieselbe Warnung bringt. Einen neuen Versuch startet:
+
+```sh
+mailabruf render             # fehlende und fehlgeschlagene PDFs erzeugen, index.html neu schreiben
+mailabruf render --force     # alle PDFs neu erzeugen (z. B. nach einem Update)
+```
+
+`render` arbeitet ohne Verbindung zum Server. Ob eine PDF erzeugt wurde oder fehlgeschlagen ist (mit Fehlertext), steht in der Datenbank in den Spalten `pdf_status` und `pdf_error`.
+
+### Index (index.html)
+
+Im Zielordner jedes Kontos liegt eine `index.html`, z. B. `~/Mail-Archiv/privat/index.html`. Öffnen mit:
+
+```sh
+xdg-open ~/Mail-Archiv/<konto>/index.html
+```
+
+**Inhalt:** Eine Tabelle mit allen gespeicherten Mails des Kontos:
+
+| Spalte | Inhalt |
+|---|---|
+| Date | Empfangsdatum (lokale Zeit) |
+| Folder | Mailordner, Unterordner mit `/`, z. B. `Archiv/2025` |
+| Subject | Betreff |
+| From | Absender |
+| To | Empfänger aus An und Cc |
+| Files | Links **EML** und **PDF** |
+
+Neueste Mails stehen oben. Der PDF-Link fehlt, wenn es zu der Mail keine PDF gibt. Mails, deren `.eml`-Datei gelöscht wurde, tauchen nicht auf. Als Duplikat übersprungene Mails erscheinen ebenfalls nicht, weil sie keine eigene Datei haben.
+
+**Bedienung:**
+
+- Ein Klick auf eine Spaltenüberschrift sortiert die Tabelle, ein zweiter Klick dreht die Reihenfolge um.
+- Das Suchfeld durchsucht alle Spalten, ohne auf Groß- und Kleinschreibung zu achten.
+- Das Auswahlfeld zeigt nur die Mails eines Ordners.
+- Die Anzeige „x of y messages“ zeigt, wie viele Mails gerade sichtbar sind.
+- Funktioniert offline, im hellen und dunklen Modus und auch in schmalen Fenstern.
+
+**Aktualisierung:** Das Programm schreibt die Datei nach jedem `mailabruf fetch` komplett neu, auch wenn keine neuen Mails da sind. Dasselbe passiert bei `mailabruf render`. Die Daten kommen aus der Datenbank, nicht aus den Dateien. Betreff, Absender und Empfänger werden beim Speichern einer Mail einmal ausgelesen. Für Mails aus älteren Versionen werden sie beim ersten Lauf nachgetragen.
+
+**Links:** Alle Links sind relativ zum Zielordner. Du kannst das komplette Archiv also verschieben, kopieren oder auf einen USB-Stick legen, und die Links funktionieren weiter. Ob ein Klick auf **EML** die Mail im Mailprogramm öffnet oder sie herunterlädt, hängt vom Browser ab. **PDF** öffnet in einem neuen Tab.
+
+**Datenschutz:** Die Datei enthält Betreff, Absender und Empfänger aller Mails. Wie alle Dateien des Archivs ist sie deshalb nur für den eigenen Benutzer lesbar (`0600`).
+
+Die Beschriftungen von Index und PDF-Kopf sind wie die übrige Programmausgabe englisch.
 
 ### Wie erkennt mailabruf bereits abgerufene Mails?
 
@@ -146,3 +232,11 @@ Mehrere Läufe gleichzeitig sind unkritisch: Pro Konto setzt das Programm eine S
 uv run pytest
 uv run mailabruf --help
 ```
+
+## Lizenz
+
+Copyright (C) 2026 Matthias Hotzel
+
+Dieses Programm ist freie Software. Du kannst es unter den Bedingungen der GNU General Public License, Version 2, wie von der Free Software Foundation veröffentlicht, weitergeben und/oder verändern (`GPL-2.0-only`).
+
+Die Veröffentlichung erfolgt in der Hoffnung, dass das Programm nützlich ist, aber **ohne jede Gewährleistung**, sogar ohne die implizite Gewährleistung der Marktreife oder der Eignung für einen bestimmten Zweck. Details stehen in der GNU General Public License in der Datei [`LICENSE`](LICENSE).

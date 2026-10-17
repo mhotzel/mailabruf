@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Loading and validating the configuration.
 
 Layout (default ``~/.config/mailabruf``)::

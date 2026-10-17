@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """index.html of an account: a sortable, searchable table of all saved messages."""
 
 from __future__ import annotations

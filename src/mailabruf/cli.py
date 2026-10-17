@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Command line interface."""
 
 from __future__ import annotations

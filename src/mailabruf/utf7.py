@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Decoding of IMAP folder names in modified UTF-7 (RFC 3501, section 5.1.3)."""
 
 import base64

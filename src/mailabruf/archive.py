@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Post-processing of an account's archive: PDF copies and index.html."""
 
 from __future__ import annotations

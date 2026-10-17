@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Rendering of messages to PDF with WeasyPrint.
 
 Only resources contained in the message itself (cid: parts, data: URIs) are
