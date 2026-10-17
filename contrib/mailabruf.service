@@ -1,0 +1,8 @@
+[Unit]
+Description=Download new mail into the local EML archive (mailabruf)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/mailabruf fetch

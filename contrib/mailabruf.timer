@@ -1,0 +1,10 @@
+[Unit]
+Description=Run mailabruf hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

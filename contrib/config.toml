@@ -1,0 +1,7 @@
+# Optional: ~/.config/mailabruf/config.toml
+
+[defaults]
+# Used for accounts without their own target_dir: <target_dir>/<account name>
+target_dir = "~/Mail-Archiv"
+# Where the download state (SQLite) and lock files are kept
+state_dir = "~/.local/state/mailabruf"

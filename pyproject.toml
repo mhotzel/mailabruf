@@ -1,0 +1,20 @@
+[project]
+name = "mailabruf"
+version = "0.1.0"
+description = "Download all messages of IMAP mailboxes into local .eml files"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+mailabruf = "mailabruf.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
