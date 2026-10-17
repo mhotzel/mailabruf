@@ -5,6 +5,7 @@ from email.parser import BytesParser
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 from conftest import make_message
 
 from mailabruf import mailinfo
@@ -164,3 +165,74 @@ def test_old_database_is_migrated_and_backfilled(account, out, tmp_path):
     assert message.subject == "old one"
     assert message.received.startswith("2026-10-16T10:30:00")
     assert "2026-10-16 10:30" in (account.target_dir / "index.html").read_text()
+
+
+def pdf_text(path: Path) -> str:
+    return "\n".join(page.extract_text() for page in PdfReader(path).pages)
+
+
+def test_pdf_contains_header_and_body(tmp_path):
+    target = tmp_path / "mail.pdf"
+    render_pdf(HTML_MAIL, target)
+    text = pdf_text(target)
+    for expected in ("Jürgen Müller", "Bob <bob@example.org>", "Dave <dave@example.org>",
+                     "Grüße <script>", "logo.png", "Hallo", "1 / 1"):
+        assert expected in text
+
+
+def test_long_plain_mail_spans_several_pages(tmp_path):
+    body = "\r\n".join(f"Zeile {i}" for i in range(1, 301))
+    target = tmp_path / "long.pdf"
+    render_pdf(make_message("lang", "<long@example.org>", body=body), target)
+    reader = PdfReader(target)
+    assert len(reader.pages) > 1
+    text = pdf_text(target)
+    assert "Zeile 1\n" in text and "Zeile 300" in text
+    assert f"1 / {len(reader.pages)}" in text
+
+
+def _mail(headers: str, body: bytes) -> bytes:
+    return ("From: a@example.org\r\nTo: b@example.org\r\n" + headers).encode() + b"\r\n" + body
+
+
+ODD_MAILS = {
+    "unknown charset": (
+        _mail("Subject: charset\r\nContent-Type: text/plain; charset=x-no-such-charset\r\n",
+              b"Text mit kaputtem Zeichensatz\r\n"),
+        ["Text mit kaputtem Zeichensatz"],
+    ),
+    "attachment only": (
+        _mail("Subject: nur Anhang\r\nContent-Type: application/pdf; name=rechnung.pdf\r\n"
+              "Content-Disposition: attachment; filename=rechnung.pdf\r\n"
+              "Content-Transfer-Encoding: base64\r\n", b"JVBERi0xLjQK\r\n"),
+        ["(no text content)", "rechnung.pdf"],
+    ),
+    "html without body tag": (
+        _mail("Subject: ohne body\r\nContent-Type: text/html; charset=utf-8\r\n",
+              b"<p>Nur ein Absatz</p>\r\n"),
+        ["ohne body", "Nur ein Absatz"],
+    ),
+    "multipart without text": (
+        _mail('Subject: nur Bild\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="X"\r\n',
+              b"--X\r\nContent-Type: image/png; name=bild.png\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+              b"iVBORw0KGgo=\r\n--X--\r\n"),
+        ["(no text content)", "bild.png"],
+    ),
+    "malformed headers": (
+        _mail("Subject: =?no-such-charset?q?kaputt?=\r\nCc: <<<\r\nDate: gestern\r\n",
+              b"Inhalt trotz kaputter Kopfzeilen\r\n"),
+        ["Inhalt trotz kaputter Kopfzeilen"],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", ODD_MAILS)
+def test_odd_mails_still_render(name, tmp_path):
+    data, expected = ODD_MAILS[name]
+    target = tmp_path / "odd.pdf"
+    render_pdf(data, target)
+    text = pdf_text(target)
+    for snippet in expected:
+        assert snippet in text
+    summary = mailinfo.summarize(data)
+    assert summary.sender == "a@example.org"

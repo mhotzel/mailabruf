@@ -12,7 +12,10 @@ dependencies = [
 mailabruf = "mailabruf.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pypdf>=6.21.0",
+    "pytest>=8",
+]
 
 [build-system]
 requires = ["hatchling"]
