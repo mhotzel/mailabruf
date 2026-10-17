@@ -163,7 +163,8 @@ Fehlen WeasyPrint oder die Systembibliotheken ganz, gibt das Programm pro Konto 
 Im Zielordner jedes Kontos liegt eine `index.html`, z. B. `~/Mail-Archiv/privat/index.html`. Öffnen mit:
 
 ```sh
-xdg-open ~/Mail-Archiv/<konto>/index.html
+xdg-open ~/Mail-Archiv/<konto>/index.html   # Linux
+open ~/Mail-Archiv/<konto>/index.html       # macOS
 ```
 
 **Inhalt:** Eine Tabelle mit allen gespeicherten Mails des Kontos:
