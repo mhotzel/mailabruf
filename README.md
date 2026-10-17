@@ -78,7 +78,45 @@ Scheitert eine PDF, gibt das Programm eine Warnung aus und versucht es beim norm
 
 **index.html:** Die Datei ist in sich geschlossen, braucht also keine externen Abhängigkeiten und funktioniert offline. Sie listet alle Mails mit Datum, Ordner, Betreff, Absender und Empfängern (An und Cc) und verlinkt jeweils die EML- und die PDF-Datei. Ein Klick auf eine Spaltenüberschrift sortiert die Tabelle, das Suchfeld durchsucht alle Spalten, und ein Auswahlfeld zeigt nur einen Ordner. Öffnen mit z. B. `xdg-open ~/Mail-Archiv/<konto>/index.html`.
 
-Der Download-Zustand liegt in `~/.local/state/mailabruf/<konto>.sqlite3`. Dazu gehören auch die Metadaten für den Index und der PDF-Status. Löscht man diese Datei, prüft das Programm beim nächsten Lauf alles neu und lädt alle Nachrichten noch einmal herunter. Datenbanken älterer Versionen werden beim ersten Start automatisch erweitert. Für schon vorhandene Mails werden die PDFs dann nachträglich erzeugt.
+### Wie erkennt mailabruf bereits abgerufene Mails?
+
+Pro Konto gibt es eine SQLite-Datenbank `~/.local/state/mailabruf/<konto>.sqlite3`. Der Ordner lässt sich in `config.toml` mit `[defaults] state_dir` ändern. In der Tabelle `messages` steht pro Mail eine Zeile. Erkannt wird eine Mail am Schlüssel **Ordner + UIDVALIDITY + UID**:
+
+| Spalte | Inhalt |
+|---|---|
+| `folder` | IMAP-Ordnername, z. B. `Ablage` |
+| `uidvalidity` | „Generationsnummer“ des Ordners auf dem Server |
+| `uid` | Nummer der Mail im Ordner, vom Server vergeben, steigt immer an |
+| `message_id` | `Message-ID`-Header der Mail |
+| `status` | `saved` (gespeichert) oder `duplicate` (übersprungen) |
+| `path` | Pfad zur `.eml`-Datei |
+| weitere | Abrufzeit, Metadaten für den Index, PDF-Status |
+
+Die Tabelle `folders` merkt sich die zuletzt gesehene UIDVALIDITY je Ordner.
+
+**Ablauf je Ordner:**
+
+1. Der Ordner wird nur lesend geöffnet (`EXAMINE`), der Server meldet dabei die UIDVALIDITY.
+2. `UID SEARCH ALL` liefert alle UIDs. Davon zieht das Programm die UIDs ab, die für diesen Ordner und diese UIDVALIDITY schon in der Datenbank stehen. Übrig bleiben die neuen Mails.
+3. Für die neuen Mails holt es nur die Kopfzeilen `Message-ID` und `Date`.
+4. Steht die Message-ID schon in der Datenbank, egal in welchem Ordner, wird die Mail als `duplicate` eingetragen und nicht geladen. Sonst lädt das Programm die Mail und schreibt die `.eml`-Datei. **Erst danach** trägt es sie als `saved` ein. Bricht ein Lauf ab, wird die Mail beim nächsten Mal einfach erneut geladen.
+
+**Warum UIDVALIDITY?** Ein IMAP-Server darf die UIDs eines Ordners neu vergeben, etwa nach einer Migration oder wenn ein Ordner neu angelegt wird. Er zeigt das durch eine neue UIDVALIDITY an. mailabruf gibt dann eine Warnung aus und prüft den Ordner neu. Dabei verhindert der Message-ID-Abgleich, dass Mails doppelt gespeichert werden.
+
+**Praktische Folgen:**
+
+- **Mail auf dem Server in einen anderen Ordner verschoben:** Sie bekommt dort eine neue UID, wird aber über die Message-ID als Duplikat erkannt und nicht erneut gespeichert.
+- **Mail ohne `Message-ID`:** Sie wird immer gespeichert, weil es nichts gibt, womit sie sich vergleichen ließe.
+- **Eine `.eml`-Datei gelöscht:** Sie wird nicht neu geladen, denn die Datenbank führt sie weiter als abgerufen. Im Index fehlt sie dann.
+- **Datenbank gelöscht:** Beim nächsten Lauf lädt das Programm alles erneut herunter. Die vorhandenen Dateien bleiben liegen, die neuen kommen mit Zusatz `-1` im Namen dazu.
+- **Datenbank einer älteren Version:** Sie wird beim ersten Start automatisch erweitert. PDFs und Index-Daten für vorhandene Mails werden nachträglich erzeugt.
+
+Selbst hineinschauen:
+
+```sh
+sqlite3 ~/.local/state/mailabruf/<konto>.sqlite3 \
+  "select folder, status, count(*) from messages group by folder, status"
+```
 
 ## Automatisierung
 
