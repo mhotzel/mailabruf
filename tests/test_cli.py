@@ -59,6 +59,17 @@ def test_render_reports_failed_pdfs(tmp_path, server, out, capsys, monkeypatch):
     assert captured.err.count("RuntimeError: boom") == 2
 
 
+def test_render_reports_missing_weasyprint(tmp_path, server, out, capsys, monkeypatch):
+    config_dir = setup_config(tmp_path)
+    fetch_two_messages(config_dir, server, out)
+
+    monkeypatch.setattr("mailabruf.archive.pdf_unavailable", lambda: "no pango")
+    assert main(["--config-dir", str(config_dir), "render", "--force"]) == 1
+    captured = capsys.readouterr()
+    assert "error: [test] 2 PDFs skipped: no pango" in captured.err
+    assert "[test] PDF: 0 created, 0 failed" in captured.out
+
+
 def test_render_unknown_account(tmp_path, capsys):
     config_dir = setup_config(tmp_path)
     assert main(["--config-dir", str(config_dir), "render", "nope"]) == 2

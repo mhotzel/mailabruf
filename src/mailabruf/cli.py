@@ -130,6 +130,8 @@ def _report_archive(result: AccountResult, out: Output, always: bool = False) ->
     archive = result.archive
     if archive is None:
         return
+    if archive.pdf_unavailable:
+        out.error(f"[{result.name}] {archive.pdf_skipped} PDFs skipped: {archive.pdf_unavailable}")
     line = (
         f"[{result.name}] PDF: {archive.pdf_created} created, {archive.pdf_failed} failed; "
         f"index: {archive.index}"

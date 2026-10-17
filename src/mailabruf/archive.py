@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +14,6 @@ from mailabruf import mailinfo, storage
 from mailabruf.config import Account
 from mailabruf.index import IndexEntry, write_index
 from mailabruf.output import Output
-from mailabruf.pdf import render_pdf
 from mailabruf.state import SavedMessage, State
 
 PROGRESS_STEP = 50
@@ -21,7 +23,33 @@ PROGRESS_STEP = 50
 class ArchiveResult:
     pdf_created: int = 0
     pdf_failed: int = 0
+    pdf_skipped: int = 0
+    # Why no PDFs could be created at all (WeasyPrint or its libraries missing).
+    pdf_unavailable: str | None = None
     index: Path | None = None
+
+
+def pdf_unavailable() -> str | None:
+    """Import WeasyPrint on first use; return why that failed, or None."""
+    # WeasyPrint prints a banner to stdout when a library is missing.
+    with contextlib.redirect_stdout(io.StringIO()):
+        try:
+            import mailabruf.pdf  # noqa: F401
+        except (ImportError, OSError) as exc:
+            reason = f"WeasyPrint cannot be loaded ({type(exc).__name__}: {exc})."
+            if sys.platform == "darwin":
+                return (
+                    reason + " Install Pango with 'brew install pango' and set "
+                    "DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib, see README."
+                )
+            return reason + " Install Pango, see README."
+    return None
+
+
+def render_pdf(data: bytes, target: Path) -> None:
+    from mailabruf.pdf import render_pdf as render
+
+    render(data, target)
 
 
 def update_archive(
@@ -42,6 +70,11 @@ def update_archive(
     messages = [m for m in state.saved_messages() if Path(m.path).exists()]
 
     pending = [m for m in messages if _needs_pdf(m, retry_failed, force)]
+    if pending and (reason := pdf_unavailable()):
+        # Leave the PDF status untouched, so the next run creates them.
+        result.pdf_unavailable = reason
+        result.pdf_skipped = len(pending)
+        pending = []
     for number, message in enumerate(pending, 1):
         eml = Path(message.path)
         try:

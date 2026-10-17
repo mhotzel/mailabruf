@@ -10,7 +10,7 @@ Zu jeder Mail legt das Programm zusätzlich eine PDF-Datei mit gleichem Namen an
 
 ## Voraussetzungen und Abhängigkeiten
 
-Abruf und Ablage der Mails (IMAP, `.eml`, SQLite, Konfiguration) kommen allein mit der Python-Standardbibliothek aus. Für die **PDF-Erzeugung** kommen externe Abhängigkeiten dazu. Ohne sie startet das Programm nicht, auch nicht für den reinen Abruf.
+Abruf und Ablage der Mails (IMAP, `.eml`, SQLite, Konfiguration) kommen allein mit der Python-Standardbibliothek aus. Für die **PDF-Erzeugung** kommen externe Abhängigkeiten dazu. Fehlen die Systembibliotheken, startet das Programm trotzdem: Es lädt und speichert die Mails und schreibt die `index.html`, lässt die PDFs aber aus (siehe [PDF-Erzeugung](#pdf-erzeugung), Abschnitt „Fehler“).
 
 | Art | Abhängigkeit | Wofür |
 |---|---|---|
@@ -21,11 +21,40 @@ Abruf und Ablage der Mails (IMAP, `.eml`, SQLite, Konfiguration) kommen allein m
 | Schriften | beliebige installierte Systemschriften | Darstellung in den PDFs |
 | nur Entwicklung | `pytest`, `pypdf` | Tests; `pypdf` liest den Text der erzeugten PDFs aus |
 
-Die Python-Pakete installiert `uv` automatisch: `uv run` nimmt die festen Versionen aus `uv.lock`, `uv tool install .` die jeweils passenden aktuellen. Die Systembibliotheken sind auf einem Fedora-Desktop normalerweise schon vorhanden. Fehlen sie, zum Beispiel auf einem Server ohne grafische Oberfläche, installierst du sie so:
+Die Python-Pakete installiert `uv` automatisch: `uv run` nimmt die festen Versionen aus `uv.lock`, `uv tool install .` die jeweils passenden aktuellen. Die Systembibliotheken musst du je nach System selbst installieren.
+
+### Linux
+
+Auf einem Fedora-Desktop sind die Bibliotheken normalerweise schon vorhanden. Fehlen sie, zum Beispiel auf einem Server ohne grafische Oberfläche, installierst du sie so:
 
 ```sh
 sudo dnf install pango                      # Fedora
 sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core   # Debian/Ubuntu
+```
+
+Mehr ist unter Linux nicht nötig. Die Bibliotheken liegen in den Standardpfaden und werden dort gefunden.
+
+### macOS
+
+macOS bringt Pango nicht mit. Du installierst es mit [Homebrew](https://brew.sh/), GLib, HarfBuzz und Fontconfig kommen dabei mit:
+
+```sh
+brew install pango
+```
+
+Homebrew legt die Bibliotheken in `/opt/homebrew/lib` ab (auf Intel-Macs in `/usr/local/lib`). Das Python, das `uv` verwendet, sucht dort aber nicht. Deshalb musst du den Pfad zusätzlich in der Umgebungsvariablen `DYLD_FALLBACK_LIBRARY_PATH` angeben, am besten dauerhaft in `~/.zshrc`:
+
+```sh
+echo 'export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Ohne diese Variable meldet das Programm `cannot load library 'libgobject-2.0-0'`, obwohl Pango installiert ist. Für Läufe über `launchd` oder `cron` gilt die `~/.zshrc` nicht, dort musst du die Variable selbst setzen (siehe [Automatisierung](#automatisierung)).
+
+### Prüfen
+
+```sh
+uv run python -c "import weasyprint"     # keine Ausgabe = alles da
 ```
 
 Die index.html hat **keine** externen Abhängigkeiten. Sie ist eine einzelne Datei mit eingebettetem CSS und JavaScript und funktioniert ohne Internet in jedem aktuellen Browser.
@@ -125,6 +154,8 @@ mailabruf render             # fehlende und fehlgeschlagene PDFs erzeugen, index
 mailabruf render --force     # alle PDFs neu erzeugen (z. B. nach einem Update)
 ```
 
+Fehlen WeasyPrint oder die Systembibliotheken ganz, gibt das Programm pro Konto einmal einen Fehler mit dem Hinweis auf die Installation aus (`error: [konto] 12 PDFs skipped: WeasyPrint cannot be loaded …`), und der Lauf endet mit Exit-Code 1. Die Mails werden trotzdem gespeichert, und die `index.html` wird geschrieben. Diese PDFs gelten nicht als fehlgeschlagen: Sobald die Bibliotheken da sind, erzeugt sie der nächste `fetch` oder `render` automatisch.
+
 `render` arbeitet ohne Verbindung zum Server. Ob eine PDF erzeugt wurde oder fehlgeschlagen ist (mit Fehlertext), steht in der Datenbank in den Spalten `pdf_status` und `pdf_error`.
 
 ### Index (index.html)
@@ -222,6 +253,12 @@ Damit der Timer auch ohne angemeldete Sitzung läuft, einmalig `loginctl enable-
 
 ```
 0 * * * * $HOME/.local/bin/mailabruf -q fetch
+```
+
+Unter macOS braucht cron zusätzlich den Pfad zu den Homebrew-Bibliotheken (siehe [macOS](#macos)):
+
+```
+0 * * * * DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib $HOME/.local/bin/mailabruf -q fetch
 ```
 
 Mehrere Läufe gleichzeitig sind unkritisch: Pro Konto setzt das Programm eine Sperre. Ein zweiter Lauf überspringt das Konto mit einer Warnung.

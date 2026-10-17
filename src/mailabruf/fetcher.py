@@ -50,8 +50,10 @@ class AccountResult:
 
     @property
     def failed(self) -> bool:
-        pdf_failed = self.archive.pdf_failed if self.archive else 0
-        return self.error is not None or self.errors > 0 or pdf_failed > 0
+        archive_failed = self.archive is not None and (
+            self.archive.pdf_failed > 0 or self.archive.pdf_unavailable is not None
+        )
+        return self.error is not None or self.errors > 0 or archive_failed
 
 
 def format_counts(new: int, duplicate: int, errors: int) -> str:

@@ -1,4 +1,6 @@
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -134,6 +136,28 @@ def test_failed_pdf_is_only_retried_by_render(account, server, out, tmp_path, mo
     second = fetch_account(account, tmp_path / "state", out, connection_factory=server.connect)
     assert second.archive.pdf_failed == 0 and not second.failed
     assert rebuild_account(account, tmp_path / "state", out).archive.pdf_failed == 1
+
+
+def test_cli_starts_without_weasyprint():
+    code = "import sys, mailabruf.cli; sys.exit('weasyprint' in sys.modules)"
+    assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def test_missing_weasyprint_skips_pdfs(account, server, out, tmp_path, monkeypatch):
+    server.add_folder("INBOX")
+    server.add_message("INBOX", 1, make_message("one", "<1@example.org>"))
+
+    monkeypatch.setattr("mailabruf.archive.pdf_unavailable", lambda: "no pango")
+    result = fetch_account(account, tmp_path / "state", out, connection_factory=server.connect)
+    assert result.new == 1 and result.failed
+    assert result.archive.pdf_unavailable == "no pango" and result.archive.pdf_skipped == 1
+    assert result.archive.pdf_failed == 0
+    assert (account.target_dir / "index.html").exists()
+    assert not list(account.target_dir.rglob("*.pdf"))
+
+    monkeypatch.undo()
+    second = fetch_account(account, tmp_path / "state", out, connection_factory=server.connect)
+    assert second.archive.pdf_created == 1 and not second.failed
 
 
 def test_old_database_is_migrated_and_backfilled(account, out, tmp_path):
