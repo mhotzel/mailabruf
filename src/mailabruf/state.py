@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Local record of already downloaded messages (one SQLite file per account)."""
 
 from __future__ import annotations

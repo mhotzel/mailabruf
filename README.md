@@ -237,6 +237,6 @@ uv run mailabruf --help
 
 Copyright (C) 2026 Matthias Hotzel
 
-Dieses Programm ist freie Software. Du kannst es unter den Bedingungen der GNU General Public License, Version 2, wie von der Free Software Foundation veröffentlicht, weitergeben und/oder verändern (`GPL-2.0-only`).
+Dieses Programm ist freie Software. Du kannst es unter den Bedingungen der GNU General Public License, wie von der Free Software Foundation veröffentlicht, weitergeben und/oder verändern, entweder gemäß Version 2 der Lizenz oder (nach deiner Wahl) jeder späteren Version (`GPL-2.0-or-later`).
 
 Die Veröffentlichung erfolgt in der Hoffnung, dass das Programm nützlich ist, aber **ohne jede Gewährleistung**, sogar ohne die implizite Gewährleistung der Marktreife oder der Eignung für einen bestimmten Zweck. Details stehen in der GNU General Public License in der Datei [`LICENSE`](LICENSE).

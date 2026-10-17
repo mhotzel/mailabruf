@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Thin read-only wrapper around imaplib.
 
 Mailboxes are opened with EXAMINE and messages fetched with BODY.PEEK, so flags

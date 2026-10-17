@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Subject, sender and recipients of a message for the index."""
 
 from __future__ import annotations

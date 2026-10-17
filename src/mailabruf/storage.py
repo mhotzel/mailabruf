@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Local file layout: folder paths, file names and atomic writes."""
 
 from __future__ import annotations

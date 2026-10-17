@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Console output: results go to stdout, warnings and errors to stderr."""
 
 import sys
